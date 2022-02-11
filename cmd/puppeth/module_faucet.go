@@ -26,8 +26,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/jonkofee/go-ethereum/common"
+	"github.com/jonkofee/go-ethereum/log"
 )
 
 // faucetDockerfile is the Dockerfile required to build a faucet container to

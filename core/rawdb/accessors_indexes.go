@@ -20,12 +20,12 @@ import (
 	"bytes"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/jonkofee/go-ethereum/common"
+	"github.com/jonkofee/go-ethereum/core/types"
+	"github.com/jonkofee/go-ethereum/ethdb"
+	"github.com/jonkofee/go-ethereum/log"
+	"github.com/jonkofee/go-ethereum/params"
+	"github.com/jonkofee/go-ethereum/rlp"
 )
 
 // ReadTxLookupEntry retrieves the positional metadata associated with a transaction

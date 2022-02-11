@@ -27,7 +27,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/jonkofee/go-ethereum/common"
 )
 
 // TestPack tests the general pack/unpack tests in packing_test.go

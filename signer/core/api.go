@@ -25,17 +25,17 @@ import (
 	"os"
 	"reflect"
 
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/accounts/scwallet"
-	"github.com/ethereum/go-ethereum/accounts/usbwallet"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/internal/ethapi"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/ethereum/go-ethereum/signer/core/apitypes"
-	"github.com/ethereum/go-ethereum/signer/storage"
+	"github.com/jonkofee/go-ethereum/accounts"
+	"github.com/jonkofee/go-ethereum/accounts/keystore"
+	"github.com/jonkofee/go-ethereum/accounts/scwallet"
+	"github.com/jonkofee/go-ethereum/accounts/usbwallet"
+	"github.com/jonkofee/go-ethereum/common"
+	"github.com/jonkofee/go-ethereum/common/hexutil"
+	"github.com/jonkofee/go-ethereum/internal/ethapi"
+	"github.com/jonkofee/go-ethereum/log"
+	"github.com/jonkofee/go-ethereum/rpc"
+	"github.com/jonkofee/go-ethereum/signer/core/apitypes"
+	"github.com/jonkofee/go-ethereum/signer/storage"
 )
 
 const (

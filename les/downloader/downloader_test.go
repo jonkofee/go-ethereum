@@ -26,15 +26,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state/snapshot"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth/protocols/eth"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/event"
-	"github.com/ethereum/go-ethereum/trie"
+	"github.com/jonkofee/go-ethereum"
+	"github.com/jonkofee/go-ethereum/common"
+	"github.com/jonkofee/go-ethereum/core/rawdb"
+	"github.com/jonkofee/go-ethereum/core/state/snapshot"
+	"github.com/jonkofee/go-ethereum/core/types"
+	"github.com/jonkofee/go-ethereum/eth/protocols/eth"
+	"github.com/jonkofee/go-ethereum/ethdb"
+	"github.com/jonkofee/go-ethereum/event"
+	"github.com/jonkofee/go-ethereum/trie"
 )
 
 // Reduce some of the parameters to make the tester faster.
