@@ -45,13 +45,13 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/internal/flags"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/p2p/simulations"
-	"github.com/ethereum/go-ethereum/p2p/simulations/adapters"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/jonkofee/go-ethereum/crypto"
+	"github.com/jonkofee/go-ethereum/internal/flags"
+	"github.com/jonkofee/go-ethereum/p2p"
+	"github.com/jonkofee/go-ethereum/p2p/enode"
+	"github.com/jonkofee/go-ethereum/p2p/simulations"
+	"github.com/jonkofee/go-ethereum/p2p/simulations/adapters"
+	"github.com/jonkofee/go-ethereum/rpc"
 	"github.com/urfave/cli/v2"
 )
 

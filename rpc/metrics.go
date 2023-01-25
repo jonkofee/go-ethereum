@@ -17,9 +17,6 @@
 package rpc
 
 import (
-	"fmt"
-	"time"
-
 	"github.com/jonkofee/go-ethereum/metrics"
 )
 
@@ -33,16 +30,3 @@ var (
 
 	rpcServingTimer = metrics.NewRegisteredTimer("rpc/duration/all", nil)
 )
-
-// updateServeTimeHistogram tracks the serving time of a remote RPC call.
-func updateServeTimeHistogram(method string, success bool, elapsed time.Duration) {
-	note := "success"
-	if !success {
-		note = "failure"
-	}
-	h := fmt.Sprintf("%s/%s/%s", serveTimeHistName, method, note)
-	sampler := func() metrics.Sample {
-		return metrics.NewBoundedHistogramSample()
-	}
-	metrics.GetOrRegisterHistogramLazy(h, nil, sampler).Update(elapsed.Microseconds())
-}

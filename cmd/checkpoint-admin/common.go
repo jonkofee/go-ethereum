@@ -19,15 +19,15 @@ package main
 import (
 	"strconv"
 
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/external"
-	"github.com/ethereum/go-ethereum/cmd/utils"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/contracts/checkpointoracle"
-	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/jonkofee/go-ethereum/accounts"
+	"github.com/jonkofee/go-ethereum/accounts/abi/bind"
+	"github.com/jonkofee/go-ethereum/accounts/external"
+	"github.com/jonkofee/go-ethereum/cmd/utils"
+	"github.com/jonkofee/go-ethereum/common"
+	"github.com/jonkofee/go-ethereum/contracts/checkpointoracle"
+	"github.com/jonkofee/go-ethereum/ethclient"
+	"github.com/jonkofee/go-ethereum/params"
+	"github.com/jonkofee/go-ethereum/rpc"
 	"github.com/urfave/cli/v2"
 )
 

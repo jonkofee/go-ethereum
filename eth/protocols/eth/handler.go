@@ -24,7 +24,6 @@ import (
 	"github.com/jonkofee/go-ethereum/common"
 	"github.com/jonkofee/go-ethereum/core"
 	"github.com/jonkofee/go-ethereum/core/types"
-	"github.com/jonkofee/go-ethereum/metrics"
 	"github.com/jonkofee/go-ethereum/p2p"
 	"github.com/jonkofee/go-ethereum/p2p/enode"
 	"github.com/jonkofee/go-ethereum/p2p/enr"
@@ -214,16 +213,6 @@ func handleMessage(backend Backend, peer *Peer) error {
 		handlers = eth67
 	}
 
-	// Track the amount of time it takes to serve the request and run the handler
-	if metrics.Enabled {
-		h := fmt.Sprintf("%s/%s/%d/%#02x", p2p.HandleHistName, ProtocolName, peer.Version(), msg.Code)
-		defer func(start time.Time) {
-			sampler := func() metrics.Sample {
-				return metrics.NewBoundedHistogramSample()
-			}
-			metrics.GetOrRegisterHistogramLazy(h, nil, sampler).Update(time.Since(start).Microseconds())
-		}(time.Now())
-	}
 	if handler := handlers[msg.Code]; handler != nil {
 		return handler(backend, msg, peer)
 	}

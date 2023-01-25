@@ -194,10 +194,4 @@ func (t *Tracker) Fulfil(peer string, version uint, code uint64, id uint64) {
 	}
 	g := fmt.Sprintf("%s/%s/%d/%#02x", trackedGaugeName, t.protocol, req.version, req.reqCode)
 	metrics.GetOrRegisterGauge(g, nil).Dec(1)
-
-	h := fmt.Sprintf("%s/%s/%d/%#02x", waitHistName, t.protocol, req.version, req.reqCode)
-	sampler := func() metrics.Sample {
-		return metrics.NewBoundedHistogramSample()
-	}
-	metrics.GetOrRegisterHistogramLazy(h, nil, sampler).Update(time.Since(req.time).Microseconds())
 }

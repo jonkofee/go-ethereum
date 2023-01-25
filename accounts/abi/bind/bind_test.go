@@ -1976,11 +1976,11 @@ var bindTests = []struct {
 		imports: `
 			"math/big"
 
-			"github.com/ethereum/go-ethereum/accounts/abi/bind"
-			"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
-			"github.com/ethereum/go-ethereum/core"
-			"github.com/ethereum/go-ethereum/crypto"
-			"github.com/ethereum/go-ethereum/eth/ethconfig"
+			"github.com/jonkofee/go-ethereum/accounts/abi/bind"
+			"github.com/jonkofee/go-ethereum/accounts/abi/bind/backends"
+			"github.com/jonkofee/go-ethereum/core"
+			"github.com/jonkofee/go-ethereum/crypto"
+			"github.com/jonkofee/go-ethereum/eth/ethconfig"
 		`,
 		tester: `
 			var (
@@ -2016,11 +2016,11 @@ var bindTests = []struct {
 		imports: `
 			"math/big"
 
-			"github.com/ethereum/go-ethereum/accounts/abi/bind"
-			"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
-			"github.com/ethereum/go-ethereum/core"
-			"github.com/ethereum/go-ethereum/crypto"
-			"github.com/ethereum/go-ethereum/eth/ethconfig"
+			"github.com/jonkofee/go-ethereum/accounts/abi/bind"
+			"github.com/jonkofee/go-ethereum/accounts/abi/bind/backends"
+			"github.com/jonkofee/go-ethereum/core"
+			"github.com/jonkofee/go-ethereum/crypto"
+			"github.com/jonkofee/go-ethereum/eth/ethconfig"
 		`,
 		tester: `
 			var (
