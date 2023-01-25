@@ -23,9 +23,10 @@ import (
 	"io"
 	"sort"
 
-	"github.com/jonkofee/go-ethereum/common"
-	"github.com/jonkofee/go-ethereum/ethdb/memorydb"
-	"github.com/jonkofee/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/ethdb/memorydb"
+	"github.com/ethereum/go-ethereum/trie"
 )
 
 type kv struct {
@@ -61,8 +62,7 @@ func (f *fuzzer) readInt() uint64 {
 }
 
 func (f *fuzzer) randomTrie(n int) (*trie.Trie, map[string]*kv) {
-
-	trie := new(trie.Trie)
+	trie := trie.NewEmpty(trie.NewDatabase(rawdb.NewMemoryDatabase()))
 	vals := make(map[string]*kv)
 	size := f.readInt()
 	// Fill it with some fluff
@@ -163,7 +163,6 @@ func (f *fuzzer) fuzz() int {
 			// Modify something in the proof db
 			// add stuff to proof db
 			// drop stuff from proof db
-
 		}
 		if f.exhausted {
 			break

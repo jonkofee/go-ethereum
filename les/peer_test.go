@@ -25,14 +25,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jonkofee/go-ethereum/common"
-	"github.com/jonkofee/go-ethereum/core"
-	"github.com/jonkofee/go-ethereum/core/forkid"
-	"github.com/jonkofee/go-ethereum/core/rawdb"
-	"github.com/jonkofee/go-ethereum/core/types"
-	"github.com/jonkofee/go-ethereum/p2p"
-	"github.com/jonkofee/go-ethereum/p2p/enode"
-	"github.com/jonkofee/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/forkid"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 type testServerPeerSub struct {
@@ -100,7 +99,7 @@ type fakeChain struct{}
 
 func (f *fakeChain) Config() *params.ChainConfig { return params.MainnetChainConfig }
 func (f *fakeChain) Genesis() *types.Block {
-	return core.DefaultGenesisBlock().ToBlock(rawdb.NewMemoryDatabase())
+	return core.DefaultGenesisBlock().ToBlock()
 }
 func (f *fakeChain) CurrentHeader() *types.Header { return &types.Header{Number: big.NewInt(10000000)} }
 

@@ -24,19 +24,19 @@ import (
 	"math/big"
 	"os"
 
-	"github.com/jonkofee/go-ethereum/common"
-	"github.com/jonkofee/go-ethereum/common/hexutil"
-	"github.com/jonkofee/go-ethereum/common/math"
-	"github.com/jonkofee/go-ethereum/consensus/clique"
-	"github.com/jonkofee/go-ethereum/consensus/ethash"
-	"github.com/jonkofee/go-ethereum/core/types"
-	"github.com/jonkofee/go-ethereum/crypto"
-	"github.com/jonkofee/go-ethereum/log"
-	"github.com/jonkofee/go-ethereum/rlp"
-	"gopkg.in/urfave/cli.v1"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/consensus/clique"
+	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/urfave/cli/v2"
 )
 
-//go:generate gencodec -type header -field-override headerMarshaling -out gen_header.go
+//go:generate go run github.com/fjl/gencodec -type header -field-override headerMarshaling -out gen_header.go
 type header struct {
 	ParentHash  common.Hash       `json:"parentHash"`
 	OmmerHash   *common.Hash      `json:"sha3Uncles"`

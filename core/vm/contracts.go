@@ -22,15 +22,13 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/jonkofee/go-ethereum/common"
-	"github.com/jonkofee/go-ethereum/common/math"
-	"github.com/jonkofee/go-ethereum/crypto"
-	"github.com/jonkofee/go-ethereum/crypto/blake2b"
-	"github.com/jonkofee/go-ethereum/crypto/bls12381"
-	"github.com/jonkofee/go-ethereum/crypto/bn256"
-	"github.com/jonkofee/go-ethereum/params"
-
-	//lint:ignore SA1019 Needed for precompile
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/blake2b"
+	"github.com/ethereum/go-ethereum/crypto/bls12381"
+	"github.com/ethereum/go-ethereum/crypto/bn256"
+	"github.com/ethereum/go-ethereum/params"
 	"golang.org/x/crypto/ripemd160"
 )
 
@@ -131,6 +129,8 @@ func init() {
 // ActivePrecompiles returns the precompiles enabled with the current configuration.
 func ActivePrecompiles(rules params.Rules) []common.Address {
 	switch {
+	case rules.IsArbitrum:
+		return PrecompiledAddressesArbitrum
 	case rules.IsBerlin:
 		return PrecompiledAddressesBerlin
 	case rules.IsIstanbul:
@@ -142,12 +142,31 @@ func ActivePrecompiles(rules params.Rules) []common.Address {
 	}
 }
 
+type AdvancedPrecompileCall struct {
+	PrecompileAddress common.Address
+	ActingAsAddress   common.Address
+	Caller            common.Address
+	Value             *big.Int
+	ReadOnly          bool
+	Evm               *EVM
+}
+
+type AdvancedPrecompile interface {
+	RunAdvanced(input []byte, suppliedGas uint64, advancedInfo *AdvancedPrecompileCall) (ret []byte, remainingGas uint64, err error)
+	PrecompiledContract
+}
+
 // RunPrecompiledContract runs and evaluates the output of a precompiled contract.
 // It returns
 // - the returned bytes,
 // - the _remaining_ gas,
 // - any error that occurred
-func RunPrecompiledContract(p PrecompiledContract, input []byte, suppliedGas uint64) (ret []byte, remainingGas uint64, err error) {
+func RunPrecompiledContract(p PrecompiledContract, input []byte, suppliedGas uint64, advancedInfo *AdvancedPrecompileCall) (ret []byte, remainingGas uint64, err error) {
+	advanced, isAdvanced := p.(AdvancedPrecompile)
+	if isAdvanced {
+		return advanced.RunAdvanced(input, suppliedGas, advancedInfo)
+	}
+
 	gasCost := p.RequiredGas(input)
 	if suppliedGas < gasCost {
 		return nil, 0, ErrOutOfGas
@@ -591,7 +610,7 @@ func (c *blake2F) Run(input []byte) ([]byte, error) {
 	// Parse the input into the Blake2b call parameters
 	var (
 		rounds = binary.BigEndian.Uint32(input[0:4])
-		final  = (input[212] == blake2FFinalBlockBytes)
+		final  = input[212] == blake2FFinalBlockBytes
 
 		h [8]uint64
 		m [16]uint64

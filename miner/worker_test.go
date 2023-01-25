@@ -113,7 +113,6 @@ type testWorkerBackend struct {
 	db         ethdb.Database
 	txPool     *core.TxPool
 	chain      *core.BlockChain
-	testTxFeed event.Feed
 	genesis    *core.Genesis
 	uncleBlock *types.Block
 }
@@ -137,7 +136,7 @@ func newTestWorkerBackend(t *testing.T, chainConfig *params.ChainConfig, engine 
 	}
 	genesis := gspec.MustCommit(db)
 
-	chain, _ := core.NewBlockChain(db, &core.CacheConfig{TrieDirtyDisabled: true}, gspec.Config, engine, vm.Config{}, nil, nil)
+	chain, _ := core.NewBlockChain(db, &core.CacheConfig{TrieDirtyDisabled: true, TriesInMemory: 128}, gspec.Config, engine, vm.Config{}, nil, nil)
 	txpool := core.NewTxPool(testTxPoolConfig, chainConfig, chain)
 
 	// Generate a small n-block chain and an uncle block for it
@@ -495,7 +494,7 @@ func testAdjustInterval(t *testing.T, chainConfig *params.ChainConfig, engine co
 	}
 	w.start()
 
-	time.Sleep(time.Second) // Ensure two tasks have been summitted due to start opt
+	time.Sleep(time.Second) // Ensure two tasks have been submitted due to start opt
 	atomic.StoreUint32(&start, 1)
 
 	w.setRecommitInterval(3 * time.Second)
@@ -638,7 +637,9 @@ func testGetSealingWork(t *testing.T, chainConfig *params.ChainConfig, engine co
 
 	// This API should work even when the automatic sealing is not enabled
 	for _, c := range cases {
-		block, err := w.getSealingBlock(c.parent, timestamp, c.coinbase, c.random)
+		resChan, errChan, _ := w.getSealingBlock(c.parent, timestamp, c.coinbase, c.random, false)
+		block := <-resChan
+		err := <-errChan
 		if c.expectErr {
 			if err == nil {
 				t.Error("Expect error but get nil")
@@ -654,7 +655,9 @@ func testGetSealingWork(t *testing.T, chainConfig *params.ChainConfig, engine co
 	// This API should work even when the automatic sealing is enabled
 	w.start()
 	for _, c := range cases {
-		block, err := w.getSealingBlock(c.parent, timestamp, c.coinbase, c.random)
+		resChan, errChan, _ := w.getSealingBlock(c.parent, timestamp, c.coinbase, c.random, false)
+		block := <-resChan
+		err := <-errChan
 		if c.expectErr {
 			if err == nil {
 				t.Error("Expect error but get nil")

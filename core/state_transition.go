@@ -42,8 +42,10 @@ The state transitioning model does all the necessary work to work out a valid ne
 3) Create a new state object if the recipient is \0*32
 4) Value transfer
 == If contract creation ==
-  4a) Attempt to run transaction data
-  4b) If valid, use result as code for the new state object
+
+	4a) Attempt to run transaction data
+	4b) If valid, use result as code for the new state object
+
 == end ==
 5) Run Script section
 6) Derive new state root
@@ -64,6 +66,8 @@ type StateTransition struct {
 
 // Message represents a message sent to a contract.
 type Message interface {
+	UnderlyingTransaction() *types.Transaction
+	RunMode() types.MessageRunMode
 	From() common.Address
 	To() *common.Address
 
@@ -85,6 +89,9 @@ type ExecutionResult struct {
 	UsedGas    uint64 // Total used gas but include the refunded gas
 	Err        error  // Any error encountered during the execution(listed in core/vm/errors.go)
 	ReturnData []byte // Returned data from evm(function result or data supplied with revert opcode)
+
+	// Arbitrum: a tx may yield others that need to run afterward (see retryables)
+	ScheduledTxes types.Transactions
 }
 
 // Unwrap returns the internal evm error which allows us for further
@@ -157,6 +164,9 @@ func IntrinsicGas(data []byte, accessList types.AccessList, isContractCreation b
 
 // NewStateTransition initialises and returns a new state transition object.
 func NewStateTransition(evm *vm.EVM, msg Message, gp *GasPool) *StateTransition {
+	if ReadyEVMForL2 != nil {
+		ReadyEVMForL2(evm, msg)
+	}
 	return &StateTransition{
 		gp:        gp,
 		evm:       evm,
@@ -208,6 +218,13 @@ func (st *StateTransition) buyGas() error {
 
 	st.initialGas = st.msg.Gas()
 	st.state.SubBalance(st.msg.From(), mgval)
+
+	// Arbitrum: record fee payment
+	if st.evm.Config.Debug {
+		from := st.msg.From()
+		st.evm.Config.Tracer.CaptureArbitrumTransfer(st.evm, &from, nil, mgval, true, "feePayment")
+	}
+
 	return nil
 }
 
@@ -262,17 +279,27 @@ func (st *StateTransition) preCheck() error {
 // TransitionDb will transition the state by applying the current message and
 // returning the evm execution result with following fields.
 //
-// - used gas:
-//      total gas used (including gas being refunded)
-// - returndata:
-//      the returned data from evm
-// - concrete execution error:
-//      various **EVM** error which aborts the execution,
-//      e.g. ErrOutOfGas, ErrExecutionReverted
+//   - used gas:
+//     total gas used (including gas being refunded)
+//   - returndata:
+//     the returned data from evm
+//   - concrete execution error:
+//     various **EVM** error which aborts the execution,
+//     e.g. ErrOutOfGas, ErrExecutionReverted
 //
 // However if any consensus issue encountered, return the error directly with
 // nil evm execution result.
 func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
+	endTxNow, startHookUsedGas, err, returnData := st.evm.ProcessingHook.StartTxHook()
+	if endTxNow {
+		return &ExecutionResult{
+			UsedGas:       startHookUsedGas,
+			Err:           err,
+			ReturnData:    returnData,
+			ScheduledTxes: st.evm.ProcessingHook.ScheduledTxes(),
+		}, nil
+	}
+
 	// First check this message satisfies all consensus rules before
 	// applying the message. The rules include these clauses
 	//
@@ -283,19 +310,33 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	// 5. there is no overflow when calculating intrinsic gas
 	// 6. caller has enough balance to cover asset transfer for **topmost** call
 
+	// Arbitrum: drop tip for delayed (and old) messages
+	if st.evm.ProcessingHook.DropTip() && st.gasPrice.Cmp(st.evm.Context.BaseFee) > 0 {
+		st.gasPrice = st.evm.Context.BaseFee
+		st.gasTipCap = common.Big0
+	}
+
 	// Check clauses 1-3, buy gas if everything is correct
 	if err := st.preCheck(); err != nil {
 		return nil, err
 	}
-	msg := st.msg
-	sender := vm.AccountRef(msg.From())
-	homestead := st.evm.ChainConfig().IsHomestead(st.evm.Context.BlockNumber)
-	istanbul := st.evm.ChainConfig().IsIstanbul(st.evm.Context.BlockNumber)
-	london := st.evm.ChainConfig().IsLondon(st.evm.Context.BlockNumber)
-	contractCreation := msg.To() == nil
+
+	if st.evm.Config.Debug {
+		st.evm.Config.Tracer.CaptureTxStart(st.initialGas)
+		defer func() {
+			st.evm.Config.Tracer.CaptureTxEnd(st.gas)
+		}()
+	}
+
+	var (
+		msg              = st.msg
+		sender           = vm.AccountRef(msg.From())
+		rules            = st.evm.ChainConfig().Rules(st.evm.Context.BlockNumber, st.evm.Context.Random != nil)
+		contractCreation = msg.To() == nil
+	)
 
 	// Check clauses 4-5, subtract intrinsic gas if everything is correct
-	gas, err := IntrinsicGas(st.data, st.msg.AccessList(), contractCreation, homestead, istanbul)
+	gas, err := IntrinsicGas(st.data, st.msg.AccessList(), contractCreation, rules.IsHomestead, rules.IsIstanbul)
 	if err != nil {
 		return nil, err
 	}
@@ -304,13 +345,19 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	}
 	st.gas -= gas
 
+	tipAmount := big.NewInt(0)
+	tipReceipient, err := st.evm.ProcessingHook.GasChargingHook(&st.gas)
+	if err != nil {
+		return nil, err
+	}
+
 	// Check clause 6
 	if msg.Value().Sign() > 0 && !st.evm.Context.CanTransfer(st.state, msg.From(), msg.Value()) {
 		return nil, fmt.Errorf("%w: address %v", ErrInsufficientFundsForTransfer, msg.From().Hex())
 	}
 
 	// Set up the initial access list.
-	if rules := st.evm.ChainConfig().Rules(st.evm.Context.BlockNumber, st.evm.Context.Random != nil); rules.IsBerlin {
+	if rules.IsBerlin {
 		st.state.PrepareAccessList(msg.From(), msg.To(), vm.ActivePrecompiles(rules), msg.AccessList())
 	}
 	var (
@@ -325,7 +372,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		ret, st.gas, vmerr = st.evm.Call(sender, st.to(), st.data, st.gas, st.value)
 	}
 
-	if !london {
+	if !rules.IsLondon {
 		// Before EIP-3529: refunds were capped to gasUsed / 2
 		st.refundGas(params.RefundQuotient)
 	} else {
@@ -333,29 +380,66 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		st.refundGas(params.RefundQuotientEIP3529)
 	}
 	effectiveTip := st.gasPrice
-	if london {
+	if rules.IsLondon {
 		effectiveTip = cmath.BigMin(st.gasTipCap, new(big.Int).Sub(st.gasFeeCap, st.evm.Context.BaseFee))
 	}
-	st.state.AddBalance(st.evm.Context.Coinbase, new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), effectiveTip))
+	if st.evm.Config.NoBaseFee && st.gasFeeCap.Sign() == 0 && st.gasTipCap.Sign() == 0 {
+		// Skip fee payment when NoBaseFee is set and the fee fields
+		// are 0. This avoids a negative effectiveTip being applied to
+		// the coinbase when simulating calls.
+	} else {
+		fee := new(big.Int).SetUint64(st.gasUsed())
+		fee.Mul(fee, effectiveTip)
+		st.state.AddBalance(tipReceipient, fee)
+		tipAmount = fee
+	}
+
+	// Arbitrum: record the tip
+	if st.evm.Config.Debug && !st.evm.ProcessingHook.DropTip() {
+		st.evm.Config.Tracer.CaptureArbitrumTransfer(st.evm, nil, &tipReceipient, tipAmount, false, "tip")
+	}
+
+	st.evm.ProcessingHook.EndTxHook(st.gas, vmerr == nil)
+
+	// Arbitrum: record self destructs
+	if st.evm.Config.Debug {
+		for _, address := range st.evm.StateDB.GetSuicides() {
+			balance := st.evm.StateDB.GetBalance(address)
+			st.evm.Config.Tracer.CaptureArbitrumTransfer(st.evm, &address, nil, balance, false, "selfDestruct")
+		}
+	}
 
 	return &ExecutionResult{
-		UsedGas:    st.gasUsed(),
-		Err:        vmerr,
-		ReturnData: ret,
+		UsedGas:       st.gasUsed(),
+		Err:           vmerr,
+		ReturnData:    ret,
+		ScheduledTxes: st.evm.ProcessingHook.ScheduledTxes(),
 	}, nil
 }
 
 func (st *StateTransition) refundGas(refundQuotient uint64) {
-	// Apply refund counter, capped to a refund quotient
-	refund := st.gasUsed() / refundQuotient
-	if refund > st.state.GetRefund() {
-		refund = st.state.GetRefund()
+
+	st.gas += st.evm.ProcessingHook.ForceRefundGas()
+
+	nonrefundable := st.evm.ProcessingHook.NonrefundableGas()
+	if nonrefundable < st.gasUsed() {
+		// Apply refund counter, capped to a refund quotient
+		refund := (st.gasUsed() - nonrefundable) / refundQuotient
+		if refund > st.state.GetRefund() {
+			refund = st.state.GetRefund()
+		}
+		st.gas += refund
 	}
-	st.gas += refund
 
 	// Return ETH for remaining gas, exchanged at the original rate.
 	remaining := new(big.Int).Mul(new(big.Int).SetUint64(st.gas), st.gasPrice)
 	st.state.AddBalance(st.msg.From(), remaining)
+
+	// Arbitrum: record the gas refund
+	if st.evm.Config.Debug {
+		from := st.msg.From()
+		st.evm.Config.Tracer.CaptureArbitrumTransfer(st.evm, nil, &from, remaining, false, "gasRefund")
+	}
 
 	// Also return remaining gas to the block gas counter so it is
 	// available for the next transaction.

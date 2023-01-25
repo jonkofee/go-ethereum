@@ -21,9 +21,7 @@ package core
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/big"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +51,7 @@ type rewindTest struct {
 	expHeadBlock       uint64 // Block number of the expected head full block
 }
 
+//nolint:unused
 func (tt *rewindTest) dump(crash bool) string {
 	buffer := new(strings.Builder)
 
@@ -1955,11 +1954,7 @@ func testSetHead(t *testing.T, tt *rewindTest, snapshots bool) {
 	// fmt.Println(tt.dump(false))
 
 	// Create a temporary persistent database
-	datadir, err := ioutil.TempDir("", "")
-	if err != nil {
-		t.Fatalf("Failed to create temporary datadir: %v", err)
-	}
-	os.RemoveAll(datadir)
+	datadir := t.TempDir()
 
 	db, err := rawdb.NewLevelDBDatabaseWithFreezer(datadir, 0, 0, datadir, "", false)
 	if err != nil {
@@ -1972,6 +1967,11 @@ func testSetHead(t *testing.T, tt *rewindTest, snapshots bool) {
 		genesis = (&Genesis{BaseFee: big.NewInt(params.InitialBaseFee)}).MustCommit(db)
 		engine  = ethash.NewFullFaker()
 		config  = &CacheConfig{
+
+			// Arbitrum
+			TriesInMemory: 128,
+			TrieRetention: 30 * time.Minute,
+
 			TrieCleanLimit: 256,
 			TrieDirtyLimit: 256,
 			TrieTimeLimit:  5 * time.Minute,

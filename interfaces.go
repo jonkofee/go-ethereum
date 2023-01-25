@@ -22,8 +22,9 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/jonkofee/go-ethereum/common"
-	"github.com/jonkofee/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // NotFound is returned by API methods if the requested item does not exist.
@@ -124,6 +125,30 @@ type SyncProgress struct {
 	HealingBytecode  uint64 // Number of bytecodes pending
 }
 
+func (progress SyncProgress) ToMap() map[string]interface{} {
+	if progress.CurrentBlock >= progress.HighestBlock {
+		return nil
+	}
+	// Otherwise gather the block sync stats
+	return map[string]interface{}{
+		"startingBlock":       hexutil.Uint64(progress.StartingBlock),
+		"currentBlock":        hexutil.Uint64(progress.CurrentBlock),
+		"highestBlock":        hexutil.Uint64(progress.HighestBlock),
+		"syncedAccounts":      hexutil.Uint64(progress.SyncedAccounts),
+		"syncedAccountBytes":  hexutil.Uint64(progress.SyncedAccountBytes),
+		"syncedBytecodes":     hexutil.Uint64(progress.SyncedBytecodes),
+		"syncedBytecodeBytes": hexutil.Uint64(progress.SyncedBytecodeBytes),
+		"syncedStorage":       hexutil.Uint64(progress.SyncedStorage),
+		"syncedStorageBytes":  hexutil.Uint64(progress.SyncedStorageBytes),
+		"healedTrienodes":     hexutil.Uint64(progress.HealedTrienodes),
+		"healedTrienodeBytes": hexutil.Uint64(progress.HealedTrienodeBytes),
+		"healedBytecodes":     hexutil.Uint64(progress.HealedBytecodes),
+		"healedBytecodeBytes": hexutil.Uint64(progress.HealedBytecodeBytes),
+		"healingTrienodes":    hexutil.Uint64(progress.HealingTrienodes),
+		"healingBytecode":     hexutil.Uint64(progress.HealingBytecode),
+	}
+}
+
 // ChainSyncReader wraps access to the node's current sync status. If there's no
 // sync currently running, it returns nil.
 type ChainSyncReader interface {
@@ -199,6 +224,15 @@ type TransactionSender interface {
 // optimal gas price given current fee market conditions.
 type GasPricer interface {
 	SuggestGasPrice(ctx context.Context) (*big.Int, error)
+}
+
+// FeeHistory provides recent fee market data that consumers can use to determine
+// a reasonable maxPriorityFeePerGas value.
+type FeeHistory struct {
+	OldestBlock  *big.Int     // block corresponding to first response value
+	Reward       [][]*big.Int // list every txs priority fee per block
+	BaseFee      []*big.Int   // list of each block's base fee
+	GasUsedRatio []float64    // ratio of gas used out of the total available limit
 }
 
 // A PendingStateReader provides access to the pending state, which is the result of all

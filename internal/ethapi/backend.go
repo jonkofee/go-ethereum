@@ -22,26 +22,29 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/jonkofee/go-ethereum"
-	"github.com/jonkofee/go-ethereum/accounts"
-	"github.com/jonkofee/go-ethereum/common"
-	"github.com/jonkofee/go-ethereum/consensus"
-	"github.com/jonkofee/go-ethereum/core"
-	"github.com/jonkofee/go-ethereum/core/bloombits"
-	"github.com/jonkofee/go-ethereum/core/state"
-	"github.com/jonkofee/go-ethereum/core/types"
-	"github.com/jonkofee/go-ethereum/core/vm"
-	"github.com/jonkofee/go-ethereum/ethdb"
-	"github.com/jonkofee/go-ethereum/event"
-	"github.com/jonkofee/go-ethereum/params"
-	"github.com/jonkofee/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/eth/filters"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // Backend interface provides the common API services (that are provided by
 // both full and light clients) with access to necessary functions.
 type Backend interface {
+	FallbackClient() types.FallbackClient
+
 	// General Ethereum API
 	SyncProgress() ethereum.SyncProgress
+	SyncProgressMap() map[string]interface{}
 
 	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
 	FeeHistory(ctx context.Context, blockCount int, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (*big.Int, [][]*big.Int, []*big.Int, []float64, error)
@@ -65,6 +68,7 @@ type Backend interface {
 	BlockByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*types.Block, error)
 	StateAndHeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*state.StateDB, *types.Header, error)
 	StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*state.StateDB, *types.Header, error)
+	PendingBlockAndReceipts() (*types.Block, types.Receipts)
 	GetReceipts(ctx context.Context, hash common.Hash) (types.Receipts, error)
 	GetTd(ctx context.Context, hash common.Hash) *big.Int
 	GetEVM(ctx context.Context, msg core.Message, state *state.StateDB, header *types.Header, vmConfig *vm.Config) (*vm.EVM, func() error, error)
@@ -83,16 +87,12 @@ type Backend interface {
 	TxPoolContentFrom(addr common.Address) (types.Transactions, types.Transactions)
 	SubscribeNewTxsEvent(chan<- core.NewTxsEvent) event.Subscription
 
-	// Filter API
-	BloomStatus() (uint64, uint64)
-	GetLogs(ctx context.Context, blockHash common.Hash) ([][]*types.Log, error)
-	ServiceFilter(ctx context.Context, session *bloombits.MatcherSession)
-	SubscribeLogsEvent(ch chan<- []*types.Log) event.Subscription
-	SubscribePendingLogsEvent(ch chan<- []*types.Log) event.Subscription
-	SubscribeRemovedLogsEvent(ch chan<- core.RemovedLogsEvent) event.Subscription
-
 	ChainConfig() *params.ChainConfig
 	Engine() consensus.Engine
+
+	// eth/filters needs to be initialized from this backend type, so methods needed by
+	// it must also be included here.
+	filters.Backend
 }
 
 func GetAPIs(apiBackend Backend) []rpc.API {
@@ -100,43 +100,25 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 	return []rpc.API{
 		{
 			Namespace: "eth",
-			Version:   "1.0",
-			Service:   NewPublicEthereumAPI(apiBackend),
-			Public:    true,
+			Service:   NewEthereumAPI(apiBackend),
 		}, {
 			Namespace: "eth",
-			Version:   "1.0",
-			Service:   NewPublicBlockChainAPI(apiBackend),
-			Public:    true,
+			Service:   NewBlockChainAPI(apiBackend),
 		}, {
 			Namespace: "eth",
-			Version:   "1.0",
-			Service:   NewPublicTransactionPoolAPI(apiBackend, nonceLock),
-			Public:    true,
+			Service:   NewTransactionAPI(apiBackend, nonceLock),
 		}, {
 			Namespace: "txpool",
-			Version:   "1.0",
-			Service:   NewPublicTxPoolAPI(apiBackend),
-			Public:    true,
+			Service:   NewTxPoolAPI(apiBackend),
 		}, {
 			Namespace: "debug",
-			Version:   "1.0",
-			Service:   NewPublicDebugAPI(apiBackend),
-			Public:    true,
-		}, {
-			Namespace: "debug",
-			Version:   "1.0",
-			Service:   NewPrivateDebugAPI(apiBackend),
+			Service:   NewDebugAPI(apiBackend),
 		}, {
 			Namespace: "eth",
-			Version:   "1.0",
-			Service:   NewPublicAccountAPI(apiBackend.AccountManager()),
-			Public:    true,
+			Service:   NewEthereumAccountAPI(apiBackend.AccountManager()),
 		}, {
 			Namespace: "personal",
-			Version:   "1.0",
-			Service:   NewPrivateAccountAPI(apiBackend, nonceLock),
-			Public:    false,
+			Service:   NewPersonalAccountAPI(apiBackend, nonceLock),
 		},
 	}
 }

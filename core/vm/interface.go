@@ -30,6 +30,7 @@ type StateDB interface {
 	SubBalance(common.Address, *big.Int)
 	AddBalance(common.Address, *big.Int)
 	GetBalance(common.Address) *big.Int
+	ExpectBalanceBurn(*big.Int)
 
 	GetNonce(common.Address) uint64
 	SetNonce(common.Address, uint64)
@@ -49,6 +50,7 @@ type StateDB interface {
 
 	Suicide(common.Address) bool
 	HasSuicided(common.Address) bool
+	GetSuicides() []common.Address
 
 	// Exist reports whether the given account exists in state.
 	// Notably this should also return true for suicided accounts.
@@ -72,6 +74,7 @@ type StateDB interface {
 
 	AddLog(*types.Log)
 	AddPreimage(common.Hash, []byte)
+	GetCurrentTxLogs() []*types.Log
 
 	ForEachStorage(common.Address, func(common.Hash, common.Hash) bool) error
 }

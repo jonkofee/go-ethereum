@@ -21,17 +21,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jonkofee/go-ethereum/common"
-	"github.com/jonkofee/go-ethereum/core"
-	"github.com/jonkofee/go-ethereum/core/types"
-	"github.com/jonkofee/go-ethereum/light"
-	"github.com/jonkofee/go-ethereum/log"
-	"github.com/jonkofee/go-ethereum/metrics"
-	"github.com/jonkofee/go-ethereum/p2p"
-	"github.com/jonkofee/go-ethereum/p2p/enode"
-	"github.com/jonkofee/go-ethereum/p2p/enr"
-	"github.com/jonkofee/go-ethereum/rlp"
-	"github.com/jonkofee/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/light"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/enr"
+	"github.com/ethereum/go-ethereum/trie"
 )
 
 const (
@@ -146,9 +144,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 		h := fmt.Sprintf("%s/%s/%d/%#02x", p2p.HandleHistName, ProtocolName, peer.Version(), msg.Code)
 		defer func(start time.Time) {
 			sampler := func() metrics.Sample {
-				return metrics.ResettingSample(
-					metrics.NewExpDecaySample(1028, 0.015),
-				)
+				return metrics.NewBoundedHistogramSample()
 			}
 			metrics.GetOrRegisterHistogramLazy(h, nil, sampler).Update(time.Since(start).Microseconds())
 		}(start)
@@ -285,7 +281,7 @@ func ServiceGetAccountRangeQuery(chain *core.BlockChain, req *GetAccountRangePac
 		req.Bytes = softResponseLimit
 	}
 	// Retrieve the requested state and bail out if non existent
-	tr, err := trie.New(req.Root, chain.StateCache().TrieDB())
+	tr, err := trie.New(common.Hash{}, req.Root, chain.StateCache().TrieDB())
 	if err != nil {
 		return nil, nil
 	}
@@ -404,24 +400,26 @@ func ServiceGetStorageRangesQuery(chain *core.BlockChain, req *GetStorageRangesP
 				break
 			}
 		}
-		slots = append(slots, storage)
+		if len(storage) > 0 {
+			slots = append(slots, storage)
+		}
 		it.Release()
 
 		// Generate the Merkle proofs for the first and last storage slot, but
 		// only if the response was capped. If the entire storage trie included
 		// in the response, no need for any proofs.
-		if origin != (common.Hash{}) || abort {
+		if origin != (common.Hash{}) || (abort && len(storage) > 0) {
 			// Request started at a non-zero hash or was capped prematurely, add
 			// the endpoint Merkle proofs
-			accTrie, err := trie.New(req.Root, chain.StateCache().TrieDB())
+			accTrie, err := trie.NewStateTrie(common.Hash{}, req.Root, chain.StateCache().TrieDB())
 			if err != nil {
 				return nil, nil
 			}
-			var acc types.StateAccount
-			if err := rlp.DecodeBytes(accTrie.Get(account[:]), &acc); err != nil {
+			acc, err := accTrie.TryGetAccountWithPreHashedKey(account[:])
+			if err != nil || acc == nil {
 				return nil, nil
 			}
-			stTrie, err := trie.New(acc.Root, chain.StateCache().TrieDB())
+			stTrie, err := trie.NewStateTrie(account, acc.Root, chain.StateCache().TrieDB())
 			if err != nil {
 				return nil, nil
 			}
@@ -487,7 +485,7 @@ func ServiceGetTrieNodesQuery(chain *core.BlockChain, req *GetTrieNodesPacket, s
 	// Make sure we have the state associated with the request
 	triedb := chain.StateCache().TrieDB()
 
-	accTrie, err := trie.NewSecure(req.Root, triedb)
+	accTrie, err := trie.NewStateTrie(common.Hash{}, req.Root, triedb)
 	if err != nil {
 		// We don't have the requested state available, bail out
 		return nil, nil
@@ -504,7 +502,7 @@ func ServiceGetTrieNodesQuery(chain *core.BlockChain, req *GetTrieNodesPacket, s
 	var (
 		nodes [][]byte
 		bytes uint64
-		loads int // Trie hash expansions to cound database reads
+		loads int // Trie hash expansions to count database reads
 	)
 	for _, pathset := range req.Paths {
 		switch len(pathset) {
@@ -529,7 +527,7 @@ func ServiceGetTrieNodesQuery(chain *core.BlockChain, req *GetTrieNodesPacket, s
 			if err != nil || account == nil {
 				break
 			}
-			stTrie, err := trie.NewSecure(common.BytesToHash(account.Root), triedb)
+			stTrie, err := trie.NewStateTrie(common.BytesToHash(pathset[0]), common.BytesToHash(account.Root), triedb)
 			loads++ // always account database reads, even for failures
 			if err != nil {
 				break

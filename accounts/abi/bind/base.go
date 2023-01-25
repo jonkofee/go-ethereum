@@ -56,6 +56,7 @@ type TransactOpts struct {
 	GasFeeCap *big.Int // Gas fee cap to use for the 1559 transaction execution (nil = gas price oracle)
 	GasTipCap *big.Int // Gas priority fee cap to use for the 1559 transaction execution (nil = gas price oracle)
 	GasLimit  uint64   // Gas limit to set for the transaction execution (0 = estimate)
+	GasMargin uint64   // Arbitrum: adjusts gas estimate by this many basis points (0 = no adjustment)
 
 	Context context.Context // Network context to support cancellation and timeouts (nil = no timeout)
 
@@ -171,7 +172,10 @@ func (c *BoundContract) Call(opts *CallOpts, results *[]interface{}, method stri
 			return ErrNoPendingState
 		}
 		output, err = pb.PendingCallContract(ctx, msg)
-		if err == nil && len(output) == 0 {
+		if err != nil {
+			return err
+		}
+		if len(output) == 0 {
 			// Make sure we have a contract to operate on, and bail out otherwise.
 			if code, err = pb.PendingCodeAt(ctx, c.address); err != nil {
 				return err
@@ -327,8 +331,8 @@ func (c *BoundContract) createLegacyTx(opts *TransactOpts, contract *common.Addr
 }
 
 func (c *BoundContract) estimateGasLimit(opts *TransactOpts, contract *common.Address, input []byte, gasPrice, gasTipCap, gasFeeCap, value *big.Int) (uint64, error) {
-	if contract != nil {
-		// Gas estimation cannot succeed without code for method invocations.
+	if contract != nil && (contract.Hash().Big().BitLen() > 16) {
+		// Gas estimation cannot succeed without code for method invocations, unless precompile.
 		if code, err := c.transactor.PendingCodeAt(ensureContext(opts.Context), c.address); err != nil {
 			return 0, err
 		} else if len(code) == 0 {
@@ -344,7 +348,16 @@ func (c *BoundContract) estimateGasLimit(opts *TransactOpts, contract *common.Ad
 		Value:     value,
 		Data:      input,
 	}
-	return c.transactor.EstimateGas(ensureContext(opts.Context), msg)
+	gasLimit, err := c.transactor.EstimateGas(ensureContext(opts.Context), msg)
+	if err != nil {
+		return 0, err
+	}
+	// Arbitrum: adjust the estimate
+	adjustedLimit := gasLimit * (10000 + opts.GasMargin) / 10000
+	if adjustedLimit > gasLimit {
+		gasLimit = adjustedLimit
+	}
+	return gasLimit, nil
 }
 
 func (c *BoundContract) getNonce(opts *TransactOpts) (uint64, error) {

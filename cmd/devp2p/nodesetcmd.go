@@ -25,29 +25,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jonkofee/go-ethereum/core/forkid"
-	"github.com/jonkofee/go-ethereum/p2p/enr"
-	"github.com/jonkofee/go-ethereum/params"
-	"github.com/jonkofee/go-ethereum/rlp"
-	"gopkg.in/urfave/cli.v1"
+	"github.com/ethereum/go-ethereum/core/forkid"
+	"github.com/ethereum/go-ethereum/p2p/enr"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/urfave/cli/v2"
 )
 
 var (
-	nodesetCommand = cli.Command{
+	nodesetCommand = &cli.Command{
 		Name:  "nodeset",
 		Usage: "Node set tools",
-		Subcommands: []cli.Command{
+		Subcommands: []*cli.Command{
 			nodesetInfoCommand,
 			nodesetFilterCommand,
 		},
 	}
-	nodesetInfoCommand = cli.Command{
+	nodesetInfoCommand = &cli.Command{
 		Name:      "info",
 		Usage:     "Shows statistics about a node set",
 		Action:    nodesetInfo,
 		ArgsUsage: "<nodes.json>",
 	}
-	nodesetFilterCommand = cli.Command{
+	nodesetFilterCommand = &cli.Command{
 		Name:      "filter",
 		Usage:     "Filters a node set",
 		Action:    nodesetFilter,

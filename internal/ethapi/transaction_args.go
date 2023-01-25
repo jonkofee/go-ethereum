@@ -23,12 +23,14 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/jonkofee/go-ethereum/common"
-	"github.com/jonkofee/go-ethereum/common/hexutil"
-	"github.com/jonkofee/go-ethereum/common/math"
-	"github.com/jonkofee/go-ethereum/core/types"
-	"github.com/jonkofee/go-ethereum/log"
-	"github.com/jonkofee/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // TransactionArgs represents the arguments to construct a new transaction
@@ -45,7 +47,7 @@ type TransactionArgs struct {
 
 	// We accept "data" and "input" for backwards-compatibility reasons.
 	// "input" is the newer name and should be preferred by clients.
-	// Issue detail: https://github.com/jonkofee/go-ethereum/issues/15628
+	// Issue detail: https://github.com/ethereum/go-ethereum/issues/15628
 	Data  *hexutil.Bytes `json:"data"`
 	Input *hexutil.Bytes `json:"input"`
 
@@ -75,56 +77,8 @@ func (args *TransactionArgs) data() []byte {
 
 // setDefaults fills in default values for unspecified tx fields.
 func (args *TransactionArgs) setDefaults(ctx context.Context, b Backend) error {
-	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
-		return errors.New("both gasPrice and (maxFeePerGas or maxPriorityFeePerGas) specified")
-	}
-	// After london, default to 1559 unless gasPrice is set
-	head := b.CurrentHeader()
-	// If user specifies both maxPriorityfee and maxFee, then we do not
-	// need to consult the chain for defaults. It's definitely a London tx.
-	if args.MaxPriorityFeePerGas == nil || args.MaxFeePerGas == nil {
-		// In this clause, user left some fields unspecified.
-		if b.ChainConfig().IsLondon(head.Number) && args.GasPrice == nil {
-			if args.MaxPriorityFeePerGas == nil {
-				tip, err := b.SuggestGasTipCap(ctx)
-				if err != nil {
-					return err
-				}
-				args.MaxPriorityFeePerGas = (*hexutil.Big)(tip)
-			}
-			if args.MaxFeePerGas == nil {
-				gasFeeCap := new(big.Int).Add(
-					(*big.Int)(args.MaxPriorityFeePerGas),
-					new(big.Int).Mul(head.BaseFee, big.NewInt(2)),
-				)
-				args.MaxFeePerGas = (*hexutil.Big)(gasFeeCap)
-			}
-			if args.MaxFeePerGas.ToInt().Cmp(args.MaxPriorityFeePerGas.ToInt()) < 0 {
-				return fmt.Errorf("maxFeePerGas (%v) < maxPriorityFeePerGas (%v)", args.MaxFeePerGas, args.MaxPriorityFeePerGas)
-			}
-		} else {
-			if args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil {
-				return errors.New("maxFeePerGas or maxPriorityFeePerGas specified but london is not active yet")
-			}
-			if args.GasPrice == nil {
-				price, err := b.SuggestGasTipCap(ctx)
-				if err != nil {
-					return err
-				}
-				if b.ChainConfig().IsLondon(head.Number) {
-					// The legacy tx gas price suggestion should not add 2x base fee
-					// because all fees are consumed, so it would result in a spiral
-					// upwards.
-					price.Add(price, head.BaseFee)
-				}
-				args.GasPrice = (*hexutil.Big)(price)
-			}
-		}
-	} else {
-		// Both maxPriorityfee and maxFee set by caller. Sanity-check their internal relation
-		if args.MaxFeePerGas.ToInt().Cmp(args.MaxPriorityFeePerGas.ToInt()) < 0 {
-			return fmt.Errorf("maxFeePerGas (%v) < maxPriorityFeePerGas (%v)", args.MaxFeePerGas, args.MaxPriorityFeePerGas)
-		}
+	if err := args.setFeeDefaults(ctx, b); err != nil {
+		return err
 	}
 	if args.Value == nil {
 		args.Value = new(hexutil.Big)
@@ -165,9 +119,81 @@ func (args *TransactionArgs) setDefaults(ctx context.Context, b Backend) error {
 		args.Gas = &estimated
 		log.Trace("Estimate gas usage automatically", "gas", args.Gas)
 	}
-	if args.ChainID == nil {
-		id := (*hexutil.Big)(b.ChainConfig().ChainID)
-		args.ChainID = id
+	// If chain id is provided, ensure it matches the local chain id. Otherwise, set the local
+	// chain id as the default.
+	want := b.ChainConfig().ChainID
+	if args.ChainID != nil {
+		if have := (*big.Int)(args.ChainID); have.Cmp(want) != 0 {
+			return fmt.Errorf("chainId does not match node's (have=%v, want=%v)", have, want)
+		}
+	} else {
+		args.ChainID = (*hexutil.Big)(want)
+	}
+	return nil
+}
+
+// setFeeDefaults fills in default fee values for unspecified tx fields.
+func (args *TransactionArgs) setFeeDefaults(ctx context.Context, b Backend) error {
+	// If both gasPrice and at least one of the EIP-1559 fee parameters are specified, error.
+	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
+		return errors.New("both gasPrice and (maxFeePerGas or maxPriorityFeePerGas) specified")
+	}
+	// If the tx has completely specified a fee mechanism, no default is needed. This allows users
+	// who are not yet synced past London to get defaults for other tx values. See
+	// https://github.com/ethereum/go-ethereum/pull/23274 for more information.
+	eip1559ParamsSet := args.MaxFeePerGas != nil && args.MaxPriorityFeePerGas != nil
+	if (args.GasPrice != nil && !eip1559ParamsSet) || (args.GasPrice == nil && eip1559ParamsSet) {
+		// Sanity check the EIP-1559 fee parameters if present.
+		if args.GasPrice == nil && args.MaxFeePerGas.ToInt().Cmp(args.MaxPriorityFeePerGas.ToInt()) < 0 {
+			return fmt.Errorf("maxFeePerGas (%v) < maxPriorityFeePerGas (%v)", args.MaxFeePerGas, args.MaxPriorityFeePerGas)
+		}
+		return nil
+	}
+	// Now attempt to fill in default value depending on whether London is active or not.
+	head := b.CurrentHeader()
+	if b.ChainConfig().IsLondon(head.Number) {
+		// London is active, set maxPriorityFeePerGas and maxFeePerGas.
+		if err := args.setLondonFeeDefaults(ctx, head, b); err != nil {
+			return err
+		}
+	} else {
+		if args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil {
+			return fmt.Errorf("maxFeePerGas and maxPriorityFeePerGas are not valid before London is active")
+		}
+		// London not active, set gas price.
+		price, err := b.SuggestGasTipCap(ctx)
+		if err != nil {
+			return err
+		}
+		args.GasPrice = (*hexutil.Big)(price)
+	}
+	return nil
+}
+
+// setLondonFeeDefaults fills in reasonable default fee values for unspecified fields.
+func (args *TransactionArgs) setLondonFeeDefaults(ctx context.Context, head *types.Header, b Backend) error {
+	// Set maxPriorityFeePerGas if it is missing.
+	if args.MaxPriorityFeePerGas == nil {
+		tip, err := b.SuggestGasTipCap(ctx)
+		if err != nil {
+			return err
+		}
+		args.MaxPriorityFeePerGas = (*hexutil.Big)(tip)
+	}
+	// Set maxFeePerGas if it is missing.
+	if args.MaxFeePerGas == nil {
+		// Set the max fee to be 2 times larger than the previous block's base fee.
+		// The additional slack allows the tx to not become invalidated if the base
+		// fee is rising.
+		val := new(big.Int).Add(
+			args.MaxPriorityFeePerGas.ToInt(),
+			new(big.Int).Mul(head.BaseFee, big.NewInt(2)),
+		)
+		args.MaxFeePerGas = (*hexutil.Big)(val)
+	}
+	// Both EIP-1559 fee parameters are now set; sanity check them.
+	if args.MaxFeePerGas.ToInt().Cmp(args.MaxPriorityFeePerGas.ToInt()) < 0 {
+		return fmt.Errorf("maxFeePerGas (%v) < maxPriorityFeePerGas (%v)", args.MaxFeePerGas, args.MaxPriorityFeePerGas)
 	}
 	return nil
 }
@@ -175,7 +201,9 @@ func (args *TransactionArgs) setDefaults(ctx context.Context, b Backend) error {
 // ToMessage converts the transaction arguments to the Message type used by the
 // core evm. This method is used in calls and traces that do not require a real
 // live transaction.
-func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (types.Message, error) {
+func (args *TransactionArgs) ToMessage(globalGasCap uint64, header *types.Header, state *state.StateDB) (types.Message, error) {
+	baseFee := header.BaseFee
+
 	// Reject invalid combinations of pre- and post-1559 fee styles
 	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
 		return types.Message{}, errors.New("both gasPrice and (maxFeePerGas or maxPriorityFeePerGas) specified")
@@ -214,7 +242,7 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (t
 			gasPrice = args.GasPrice.ToInt()
 			gasFeeCap, gasTipCap = gasPrice, gasPrice
 		} else {
-			// User specified 1559 gas feilds (or none), use those
+			// User specified 1559 gas fields (or none), use those
 			gasFeeCap = new(big.Int)
 			if args.MaxFeePerGas != nil {
 				gasFeeCap = args.MaxFeePerGas.ToInt()
@@ -240,7 +268,26 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (t
 		accessList = *args.AccessList
 	}
 	msg := types.NewMessage(addr, args.To, 0, value, gas, gasPrice, gasFeeCap, gasTipCap, data, accessList, true)
+
+	// Arbitrum: raise the gas cap to ignore L1 costs so that it's compute-only
+	if core.InterceptRPCGasCap != nil && state != nil {
+		// ToMessage recurses once to allow ArbOS to intercept the result for all callers
+		// ArbOS uses this to modify globalGasCap so that the cap will ignore this tx's specific L1 data costs
+		core.InterceptRPCGasCap(&globalGasCap, msg, header, state)
+		return args.ToMessage(globalGasCap, header, nil) // we pass a nil to avoid another recursion
+	}
 	return msg, nil
+}
+
+// Raises the vanilla gas cap by the tx's l1 data costs in l2 terms. This creates a new gas cap that after
+// data payments are made, equals the original vanilla cap for the remaining, L2-specific work the tx does.
+func (args *TransactionArgs) L2OnlyGasCap(gasCap uint64, header *types.Header, state *state.StateDB) (uint64, error) {
+	msg, err := args.ToMessage(gasCap, header, nil)
+	if err != nil {
+		return 0, err
+	}
+	core.InterceptRPCGasCap(&gasCap, msg, header, state)
+	return gasCap, nil
 }
 
 // toTransaction converts the arguments to a transaction.

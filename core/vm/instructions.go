@@ -17,6 +17,7 @@
 package vm
 
 import (
+	"math/big"
 	"sync/atomic"
 
 	"github.com/jonkofee/go-ethereum/common"
@@ -427,7 +428,11 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 }
 
 func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	v, _ := uint256.FromBig(interpreter.evm.GasPrice)
+
+	// Arbitrum: provide an opportunity to remove the tip from the gas price
+	gasPrice := interpreter.evm.ProcessingHook.GasPriceOp(interpreter.evm)
+
+	v, _ := uint256.FromBig(gasPrice)
 	scope.Stack.push(v)
 	return nil, nil
 }
@@ -439,15 +444,22 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 		num.Clear()
 		return nil, nil
 	}
-	var upper, lower uint64
-	upper = interpreter.evm.Context.BlockNumber.Uint64()
+	upper, err := interpreter.evm.ProcessingHook.L1BlockNumber(interpreter.evm.Context)
+	if err != nil {
+		return nil, err
+	}
+	var lower uint64
 	if upper < 257 {
 		lower = 0
 	} else {
 		lower = upper - 256
 	}
 	if num64 >= lower && num64 < upper {
-		num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
+		h, err := interpreter.evm.ProcessingHook.L1BlockHash(interpreter.evm.Context, num64)
+		if err != nil {
+			return nil, err
+		}
+		num.SetBytes(h.Bytes())
 	} else {
 		num.Clear()
 	}
@@ -466,7 +478,11 @@ func opTimestamp(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 }
 
 func opNumber(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	v, _ := uint256.FromBig(interpreter.evm.Context.BlockNumber)
+	bnum, err := interpreter.evm.ProcessingHook.L1BlockNumber(interpreter.evm.Context)
+	if err != nil {
+		return nil, err
+	}
+	v, _ := uint256.FromBig(new(big.Int).SetUint64(bnum))
 	scope.Stack.push(v)
 	return nil, nil
 }
@@ -478,7 +494,7 @@ func opDifficulty(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 }
 
 func opRandom(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	v := new(uint256.Int).SetBytes((interpreter.evm.Context.Random.Bytes()))
+	v := new(uint256.Int).SetBytes(interpreter.evm.Context.Random.Bytes())
 	scope.Stack.push(v)
 	return nil, nil
 }
@@ -831,6 +847,10 @@ func opSelfdestruct(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
 	interpreter.evm.StateDB.AddBalance(beneficiary.Bytes20(), balance)
 	interpreter.evm.StateDB.Suicide(scope.Contract.Address())
+	if beneficiary.Bytes20() == scope.Contract.Address() {
+		// Arbitrum: calling selfdestruct(this) burns the balance
+		interpreter.evm.StateDB.ExpectBalanceBurn(balance)
+	}
 	if interpreter.cfg.Debug {
 		interpreter.cfg.Tracer.CaptureEnter(SELFDESTRUCT, scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance)
 		interpreter.cfg.Tracer.CaptureExit([]byte{}, 0, nil)

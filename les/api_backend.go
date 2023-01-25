@@ -168,11 +168,8 @@ func (b *LesApiBackend) GetReceipts(ctx context.Context, hash common.Hash) (type
 	return nil, nil
 }
 
-func (b *LesApiBackend) GetLogs(ctx context.Context, hash common.Hash) ([][]*types.Log, error) {
-	if number := rawdb.ReadHeaderNumber(b.eth.chainDb, hash); number != nil {
-		return light.GetBlockLogs(ctx, b.eth.odr, hash, *number)
-	}
-	return nil, nil
+func (b *LesApiBackend) GetLogs(ctx context.Context, hash common.Hash, number uint64) ([][]*types.Log, error) {
+	return light.GetBlockLogs(ctx, b.eth.odr, hash, number)
 }
 
 func (b *LesApiBackend) GetTd(ctx context.Context, hash common.Hash) *big.Int {
@@ -258,6 +255,11 @@ func (b *LesApiBackend) SubscribeRemovedLogsEvent(ch chan<- core.RemovedLogsEven
 	return b.eth.blockchain.SubscribeRemovedLogsEvent(ch)
 }
 
+func (b *LesApiBackend) SyncProgressMap() map[string]interface{} {
+	progress := b.eth.Downloader().Progress()
+	return progress.ToMap()
+}
+
 func (b *LesApiBackend) SyncProgress() ethereum.SyncProgress {
 	return b.eth.Downloader().Progress()
 }
@@ -330,4 +332,8 @@ func (b *LesApiBackend) StateAtBlock(ctx context.Context, block *types.Block, re
 
 func (b *LesApiBackend) StateAtTransaction(ctx context.Context, block *types.Block, txIndex int, reexec uint64) (core.Message, vm.BlockContext, *state.StateDB, error) {
 	return b.eth.stateAtTransaction(ctx, block, txIndex, reexec)
+}
+
+func (b *LesApiBackend) FallbackClient() types.FallbackClient {
+	return nil
 }
