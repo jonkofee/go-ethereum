@@ -404,18 +404,10 @@ func (t *Transaction) UnmarshalJSON(input []byte) error {
 				return err
 			}
 		}
-		if dec.EffectiveGasPrice == nil {
-			return errors.New("missing required field 'EffectiveGasPrice' in transaction")
-		}
-		if dec.L1BlockNumber == nil {
-			return errors.New("missing required field 'L1BlockNumber' in transaction")
-		}
 		inner = &ArbitrumLegacyTxData{
-			LegacyTx:          itx,
-			HashOverride:      dec.Hash,
-			EffectiveGasPrice: uint64(*dec.EffectiveGasPrice),
-			L1BlockNumber:     uint64(*dec.L1BlockNumber),
-			Sender:            dec.From,
+			LegacyTx:     itx,
+			HashOverride: dec.Hash,
+			Sender:       dec.From,
 		}
 
 	case ArbitrumInternalTxType:
